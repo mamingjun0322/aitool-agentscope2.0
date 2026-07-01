@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: AgentScope_java
+  webflux:
+    base-path: /
+
+server:
+  port: 8088
+
+logging:
+  level:
+    io.agentscope: INFO
+    com.mideacloud: DEBUG
+
+agent:
+  model:
+    base-url: https://api.deepseek.com
+    api-key: sk-650e7daa79e04265a1ec77985224ece7
+    name: deepseek-v4-flash
+  sys-prompt: "你是一个智能问答助手，帮助用户解答各类问题。请用中文回答。"
+  max-iters: 10
+  workspace: .agentscope/workspace
+  state-store: .agentscope/sessions
+  
+  # 上下文压缩配置（方案3：激进型）
+  compaction:
+    trigger-tokens: 40000        # 40K tokens 触发压缩
+    keep-tokens: 8000            # 保留最近 8K tokens
+    trigger-messages: 80         # 或 80 条消息触发
+    keep-messages: 30            # 保留最近 30 条原文
+    flush-before-compact: true   # 开启长期记忆
+    offload-before-compact: true # 原始日志卸载
+    truncate-args-max-length: 2000  # 工具参数截断到 2K
+  
+  # 大工具结果卸载
+  tool-result-eviction:
+    max-size: 50000              # 50K 字符就卸载到文件
+  
+  # 长期记忆配置
+  memory:
+    async-flush: true            # 异步刷新记忆

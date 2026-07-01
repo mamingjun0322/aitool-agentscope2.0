@@ -1,0 +1,40 @@
+理念
+图中体现
+
+中间件双轨制
+核心引擎层中的“生命周期 + 工具调用双拦截”
+
+消息总线驱动
+基础设施层中的 MessageBus，实现跨进程异步解耦
+
+统一文件抽象
+工具层中的 AbstractFS，一套代码适配多种存储后端
+
+三位一体安全
+核心引擎层中的“工具审计 + HITL + 沙箱隔离”
+
+RAG 原生集成
+独立的 RAG 知识层，与核心引擎层通过标准接口交互
+
+多语言生态
+用户接入层同时支持 Python/TypeScript/Java SDK
+
+2， 有没有其他同类型的平台， 他们差异点是什么，有没有更优的选择
+AutoGen,LangChain,LangGraph,Google ADK,OpenAI Agents,AgentScope使用对比_agentscope和langchain-CSDN博客
+AgentScope
+https://docs.agentscope.io/
+
+LangChain
+https://www.langchain.com/
+
+LangGraph
+https://langgraph.com.cn/
+
+AutoGen
+https://microsoft.github.io/autogen/
+
+CrewAI
+https://www.crewai.com/
+
+deepagent
+
