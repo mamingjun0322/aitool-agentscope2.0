@@ -41,6 +41,7 @@ import java.util.Optional;
 @RequestMapping("/api")
 public class ChatController {
 
+//
     private final HarnessAgent agent;
     private final JsonFileAgentStateStore stateStore;
     private final ObjectMapper objectMapper = new ObjectMapper();
