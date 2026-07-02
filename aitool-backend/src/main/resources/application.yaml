@@ -19,7 +19,8 @@ agent:
     name: deepseek-v4-flash
   sys-prompt: "你是一个智能问答助手，帮助用户解答各类问题。请用中文回答。"
   max-iters: 10
-  workspace: .agentscope/workspace
+#  workspace: .agentscope/workspace
+  workspace: E:\
   state-store: .agentscope/sessions
   
   # 上下文压缩配置（方案3：激进型）

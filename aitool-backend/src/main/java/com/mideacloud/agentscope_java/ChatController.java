@@ -16,7 +16,7 @@ import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import io.agentscope.harness.agent.memory.eviction.ToolResultEvictionConfig;
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
@@ -109,12 +109,11 @@ public class ChatController {
                         .build())
                 // 大工具结果卸载
                 .toolResultEviction(ToolResultEvictionConfig.builder()
-                        .maxSize(evictionMaxSize)
+                        .maxResultChars(evictionMaxSize)
                         .build())
                 // 长期记忆
                 .memory(MemoryConfig.builder()
-                        .memoryDir(Paths.get(workspace, "memory"))
-                        .asyncFlush(asyncFlush)
+                        .flushTrigger(asyncFlush ? MemoryConfig.FlushTrigger.always() : MemoryConfig.FlushTrigger.never())
                         .build())
                 .build();
 
