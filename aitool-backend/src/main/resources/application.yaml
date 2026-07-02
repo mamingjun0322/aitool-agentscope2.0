@@ -14,13 +14,16 @@ logging:
 
 agent:
   model:
-    base-url: https://api.deepseek.com
-    api-key: sk-650e7daa79e04265a1ec77985224ece7
-    name: deepseek-v4-flash
+#    base-url: https://api.deepseek.com
+#    api-key: sk-650e7daa79e04265a1ec77985224ece7
+#    name: deepseek-v4-flash
+    base-url: http://10.26.46.17:6007
+    api-key: fASWFAFAEFAE
+    name: Qwen3.5-122B-A10B-GPTQ-Int4
   sys-prompt: "你是一个智能问答助手，帮助用户解答各类问题。请用中文回答。"
   max-iters: 10
-#  workspace: .agentscope/workspace
-  workspace: E:\
+  workspace: .agentscope/workspace
+#  workspace: E:\
   state-store: .agentscope/sessions
   
   # 上下文压缩配置（方案3：激进型）
@@ -40,3 +43,24 @@ agent:
   # 长期记忆配置
   memory:
     async-flush: true            # 异步刷新记忆
+
+  # RAG 知识库配置（使用阿里云百炼 DashScope Embedding）
+  rag:
+    api-key: sk-e57d4b1c29db4f778a0a901eed98b7dc
+    model-name: text-embedding-v3
+    dimensions: 1024
+    doc-dir: E:\data\rag
+
+  # Git 技能仓库配置
+  skill:
+    git-url: https://github.com/mamingjun0322/skill.git
+    branch: main
+
+  # MySQL 状态存储配置
+  mysql:
+    jdbc-url: jdbc:mysql://localhost:3306/agentscope?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    database-name: agentscope
+    table-name: agentscope_sessions
+    create-if-not-exist: true
