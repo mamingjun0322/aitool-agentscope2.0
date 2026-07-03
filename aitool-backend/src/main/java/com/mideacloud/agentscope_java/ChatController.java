@@ -9,6 +9,7 @@ import io.agentscope.extensions.mysql.state.MysqlAgentStateStore;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
@@ -68,6 +69,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * 聊天控制器 - 基于 AgentScope Java 框架的智能对话 API
@@ -98,6 +101,10 @@ public class ChatController {
 
     /** JSON 序列化工具，用于将事件数据转换为 SSE 响应格式 */
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** 等待用户确认的原始工具调用，按用户和会话隔离 */
+    private final ConcurrentMap<String, List<ToolUseBlock>> pendingConfirmations =
+            new ConcurrentHashMap<>();
 
     /** 当前使用的模型名称，用于健康检查接口返回 */
     @Value("${agent.model.name:deepseek-v4-flash}")
@@ -207,6 +214,7 @@ public class ChatController {
         KnowledgeRetrievalTools ragTools = new KnowledgeRetrievalTools(knowledge);
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(ragTools);
+        toolkit.registerTool(new CrossPlatformExecuteTool(Paths.get(System.getProperty("user.dir"))));
 
         // ==================== 5. 构建 Git 技能仓库（可选） ====================
         GitSkillRepository skillRepo = null;
@@ -231,7 +239,8 @@ public class ChatController {
                                 .mode(LocalFsMode.UNRESTRICTED))
                 .toolkit(toolkit)                           // RAG 知识库检索工具
                 .maxIters(maxIters)                         // 单次对话最大推理-行动循环次数
-                .permissionContext(permCtx);                 // 权限控制
+                .permissionContext(permCtx)                  // 权限控制
+                .disableShellTool();                         // RC3 默认调用 sh，Windows 下不可用
 
         // 注册 Git 技能仓库（如果配置了的话）
         if (finalSkillRepo != null) {
@@ -321,7 +330,7 @@ public class ChatController {
 
         return agent.streamEvents(userMsg, ctx)
                 .subscribeOn(Schedulers.boundedElastic())
-                .map(this::toSSE)
+                .map(event -> toSSE(event, confirmationKey(userId, sessionId)))
                 .takeUntil(sse -> {
                     try {
                         String data = sse.data();
@@ -455,7 +464,14 @@ public class ChatController {
      * @param approved  用户是否批准
      * @param message   用户回复（如 "yes, proceed" 或 "no, cancel"）
      */
-    public record ConfirmRequest(String sessionId, String userId, boolean approved, String message) {}
+    public record ConfirmToolCallRequest(String id, String name, Map<String, Object> input) {}
+
+    public record ConfirmRequest(
+            String sessionId,
+            String userId,
+            boolean approved,
+            String message,
+            List<ConfirmToolCallRequest> toolCalls) {}
 
     /**
      * 用户确认接口 - 处理权限系统的人工确认（HITL）
@@ -476,15 +492,32 @@ public class ChatController {
                 .userId(userId)
                 .build();
 
-        String resumeText = req.approved()
-                ? (req.message() != null ? req.message() : "yes, proceed")
-                : (req.message() != null ? req.message() : "no, cancel");
+        String confirmationKey = confirmationKey(userId, sessionId);
+        List<ToolUseBlock> toolCalls = pendingConfirmations.remove(confirmationKey);
+        if ((toolCalls == null || toolCalls.isEmpty())
+                && req.toolCalls() != null
+                && !req.toolCalls().isEmpty()) {
+            toolCalls = req.toolCalls().stream()
+                    .map(toolCall -> new ToolUseBlock(
+                            toolCall.id(), toolCall.name(), toolCall.input()))
+                    .toList();
+        }
+        if (toolCalls == null || toolCalls.isEmpty()) {
+            return Flux.just(toSseRaw(Map.of(
+                    "type", "ERROR",
+                    "error", "当前会话没有等待确认的工具调用，请重新发起请求")));
+        }
 
-        UserMessage resumeMsg = new UserMessage(resumeText);
+        List<ConfirmResult> confirmResults = toolCalls.stream()
+                .map(toolCall -> new ConfirmResult(req.approved(), toolCall))
+                .toList();
+        UserMessage resumeMsg = UserMessage.builder()
+                .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, confirmResults))
+                .build();
 
         return agent.streamEvents(resumeMsg, ctx)
                 .subscribeOn(Schedulers.boundedElastic())
-                .map(this::toSSE)
+                .map(event -> toSSE(event, confirmationKey))
                 .takeUntil(sse -> {
                     try {
                         String data = sse.data();
@@ -521,6 +554,7 @@ public class ChatController {
         String[] allowTools = {
                 "read_file", "grep_files", "glob_files", "list_files",
                 "memory_search", "memory_get",
+                "retrieve_knowledge",
                 "session_search", "session_list", "session_history",
                 "load_skill_through_path",
                 "todo_write",
@@ -559,7 +593,7 @@ public class ChatController {
      * @param event Agent 产生的事件
      * @return SSE 事件，data 字段为 JSON 字符串
      */
-    private ServerSentEvent<String> toSSE(AgentEvent event) {
+    private ServerSentEvent<String> toSSE(AgentEvent event, String confirmationKey) {
         Map<String, Object> map = new HashMap<>();
         AgentEventType type = event.getType();
         map.put("type", type.name());
@@ -594,6 +628,7 @@ public class ChatController {
             // 权限系统要求用户确认（HITL）
             case REQUIRE_USER_CONFIRM -> {
                 RequireUserConfirmEvent e = (RequireUserConfirmEvent) event;
+                pendingConfirmations.put(confirmationKey, List.copyOf(e.getToolCalls()));
                 map.put("replyId", e.getReplyId());
                 List<Map<String, Object>> toolCalls = new ArrayList<>();
                 for (ToolUseBlock tb : e.getToolCalls()) {
@@ -612,6 +647,10 @@ public class ChatController {
         }
 
         return toSseRaw(map);
+    }
+
+    private String confirmationKey(String userId, String sessionId) {
+        return userId + "\u0000" + sessionId;
     }
 
     /**

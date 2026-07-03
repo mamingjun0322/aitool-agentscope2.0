@@ -3,6 +3,7 @@ import { clsx } from 'clsx'
 import { useChatStore } from '../../store/chatStore'
 import { useSettingStore } from '../../store/settingStore'
 import { useChat } from '../../hooks/useChat'
+import { ConfirmationPanel } from '../chat/ConfirmationPanel'
 
 const ChatInput: FC = () => {
   const [value, setValue] = useState('')
@@ -10,11 +11,11 @@ const ChatInput: FC = () => {
   const currentSessionId = useChatStore((s) => s.currentSessionId)
   const createSession = useChatStore((s) => s.createSession)
   const { userId } = useSettingStore()
-  const { sendMessage, stopGeneration, isStreaming } = useChat()
+  const { sendMessage, confirmPermission, stopGeneration, pendingConfirmation, isStreaming } = useChat()
 
   const handleSend = async () => {
     const text = value.trim()
-    if (!text || isStreaming) return
+    if (!text || isStreaming || pendingConfirmation) return
 
     let sessionId = currentSessionId
     if (!sessionId) {
@@ -46,6 +47,13 @@ const ChatInput: FC = () => {
 
   return (
     <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3">
+      {pendingConfirmation && (
+        <ConfirmationPanel
+          confirmation={pendingConfirmation}
+          isSubmitting={isStreaming}
+          onDecision={confirmPermission}
+        />
+      )}
       {isStreaming && (
         <div className="flex justify-center mb-2">
           <button
@@ -66,8 +74,8 @@ const ChatInput: FC = () => {
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
-          disabled={isStreaming}
-          placeholder="请输入您的问题... (Enter 发送，Shift+Enter 换行)"
+          disabled={isStreaming || Boolean(pendingConfirmation)}
+          placeholder={pendingConfirmation ? '请先处理工具权限请求' : '请输入您的问题... (Enter 发送，Shift+Enter 换行)'}
           rows={1}
           className={clsx(
             'flex-1 resize-none rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 px-3 py-2.5 text-sm leading-relaxed outline-none transition-colors',
@@ -79,10 +87,10 @@ const ChatInput: FC = () => {
         />
         <button
           onClick={handleSend}
-          disabled={!value.trim() || isStreaming}
+          disabled={!value.trim() || isStreaming || Boolean(pendingConfirmation)}
           className={clsx(
             'shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all',
-            value.trim() && !isStreaming
+            value.trim() && !isStreaming && !pendingConfirmation
               ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-sm'
               : 'bg-gray-100 dark:bg-gray-700 text-gray-300 dark:text-gray-600 cursor-not-allowed'
           )}

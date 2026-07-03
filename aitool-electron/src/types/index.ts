@@ -8,7 +8,20 @@ export type AgentEventType =
   | 'MODEL_CALL_END'
   | 'AGENT_START'
   | 'AGENT_END'
+  | 'REQUIRE_USER_CONFIRM'
   | 'ERROR'
+
+export interface ConfirmationToolCall {
+  id: string
+  name: string
+  input: Record<string, unknown>
+}
+
+export interface PendingConfirmation {
+  replyId: string
+  sessionId: string
+  toolCalls: ConfirmationToolCall[]
+}
 
 export interface AgentEvent {
   type: AgentEventType
@@ -17,6 +30,8 @@ export interface AgentEvent {
   toolCallId?: string
   toolInput?: string
   toolResult?: string
+  replyId?: string
+  toolCalls?: ConfirmationToolCall[]
   error?: string
 }
 

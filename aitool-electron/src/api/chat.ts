@@ -1,4 +1,4 @@
-import type { AgentEvent } from '../types'
+import type { AgentEvent, ConfirmationToolCall } from '../types'
 
 export function parseSSEChunk(chunk: string): AgentEvent[] {
   const events: AgentEvent[] = []
@@ -30,14 +30,26 @@ export interface StreamChatOptions {
   signal?: AbortSignal
 }
 
-export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { content, sessionId, userId, baseUrl, onEvent, onError, onDone, signal } = options
+export interface ConfirmChatOptions extends Omit<StreamChatOptions, 'content'> {
+  approved: boolean
+  toolCalls: ConfirmationToolCall[]
+  message?: string
+}
+
+interface StreamRequestOptions
+  extends Omit<StreamChatOptions, 'content' | 'sessionId' | 'userId'> {
+  path: string
+  body: Record<string, unknown>
+}
+
+async function streamRequest(options: StreamRequestOptions): Promise<void> {
+  const { path, body, baseUrl, onEvent, onError, onDone, signal } = options
 
   try {
-    const response = await fetch(`${baseUrl}/api/chat/stream`, {
+    const response = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, sessionId, userId }),
+      body: JSON.stringify(body),
       signal,
     })
 
@@ -54,15 +66,25 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
+    let buffer = ''
 
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      const chunk = decoder.decode(value, { stream: true })
-      const events = parseSSEChunk(chunk)
-      for (const event of events) {
-        onEvent(event)
+      buffer += decoder.decode(value, { stream: true })
+      const frames = buffer.replace(/\r\n/g, '\n').split('\n\n')
+      buffer = frames.pop() ?? ''
+
+      for (const frame of frames) {
+        for (const event of parseSSEChunk(frame)) {
+          onEvent(event)
+        }
       }
+    }
+
+    buffer += decoder.decode()
+    for (const event of parseSSEChunk(buffer)) {
+      onEvent(event)
     }
 
     onDone()
@@ -73,6 +95,24 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     }
     onError(err instanceof Error ? err.message : '请求失败')
   }
+}
+
+export async function streamChat(options: StreamChatOptions): Promise<void> {
+  const { content, sessionId, userId, ...streamOptions } = options
+  return streamRequest({
+    ...streamOptions,
+    path: '/api/chat/stream',
+    body: { content, sessionId, userId },
+  })
+}
+
+export async function confirmChat(options: ConfirmChatOptions): Promise<void> {
+  const { sessionId, userId, approved, message, toolCalls, ...streamOptions } = options
+  return streamRequest({
+    ...streamOptions,
+    path: '/api/chat/confirm',
+    body: { sessionId, userId, approved, message, toolCalls },
+  })
 }
 
 export async function checkHealth(baseUrl: string): Promise<boolean> {
